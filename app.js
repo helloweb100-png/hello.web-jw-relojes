@@ -37,6 +37,13 @@
   let menuOpen = false;
   let resolveHero;
   const heroReady = new Promise((r) => { resolveHero = r; });
+  // Cede el hilo principal para que el navegador pinte y responda entre tareas pesadas (no se congela nada)
+  const yieldFrame = () => new Promise((resolve) => {
+    let done = false;
+    const go = () => { if (!done) { done = true; resolve(); } };
+    requestAnimationFrame(() => setTimeout(go, 0));
+    setTimeout(go, 80); // si la pestaña está en segundo plano rAF no corre
+  });
 
   /* ───────────── WhatsApp ───────────── */
   const waReady = () => /^\d{10,15}$/.test(CONFIG.whatsapp);
@@ -88,48 +95,21 @@
     return $$('.wi', el);
   }
 
-  /* ───────────── Preloader ───────────── */
+  /* ───────────── Preloader ─────────────
+     La animación es CSS puro (ver styles.css): arranca en el primer cuadro y no se detiene aunque el hilo
+     principal esté ocupado. Aquí solo se decide CUÁNDO termina: espera tipografías, recursos y el armado del
+     reloj 3D (que se hace en pasos pequeños) y respeta un mínimo de 2.3 s desde que se abrió la página. */
   function initLoader(waitFor) {
     const loader = $('#loader');
     if (!loader) { finishLoad(); return; }
-    const svg = $('.ld-ticks', loader);
-    const NS = 'http://www.w3.org/2000/svg';
-    const lines = [];
-    for (let i = 0; i < 60; i++) {
-      const a = (i * 6 * Math.PI) / 180;
-      const hr = i % 5 === 0;
-      const r1 = hr ? 83 : 90, r2 = 98;
-      const l = document.createElementNS(NS, 'line');
-      l.setAttribute('x1', (100 + Math.sin(a) * r1).toFixed(2));
-      l.setAttribute('y1', (100 - Math.cos(a) * r1).toFixed(2));
-      l.setAttribute('x2', (100 + Math.sin(a) * r2).toFixed(2));
-      l.setAttribute('y2', (100 - Math.cos(a) * r2).toFixed(2));
-      if (hr) l.setAttribute('class', 'hr');
-      svg.appendChild(l); lines.push(l);
-    }
-    const num = $('#ldNum');
-    const MIN = reduceMotion ? 700 : 2400;
-    const t0 = performance.now();
-    let p = 0, ready = false, ended = false, lit = -1;
-    Promise.all(waitFor).catch(() => {}).then(() => { ready = true; });
-
-    const frame = (now) => {
-      const el = now - t0;
-      if (el > 9000) ready = true; // seguro anti-bloqueo
-      const base = 1 - Math.pow(1 - clamp(el / MIN, 0, 1), 2.2);
-      let target = base * 92;
-      if (ready && el >= MIN) target = 100;
-      p += (target - p) * 0.14;
-      if (target === 100 && p > 99.4) p = 100;
-      loader.style.setProperty('--fill', p.toFixed(1) + '%');
-      loader.style.setProperty('--turn', ((el / 2400) % 1).toFixed(4));
-      num.textContent = String(Math.round(p)).padStart(3, '0');
-      const n = Math.floor((p / 100) * 60);
-      if (n !== lit) { for (let i = 0; i < 60; i++) lines[i].classList.toggle('on', i < n); lit = n; }
-      if (p >= 100 && !ended) { ended = true; setTimeout(finishLoad, 250); return; }
-      requestAnimationFrame(frame);
-    };
-    requestAnimationFrame(frame);
+    const MIN = reduceMotion ? 500 : 2300;
+    const giveUp = new Promise((r) => setTimeout(r, 12000)); // seguro anti-bloqueo
+    Promise.race([Promise.all(waitFor).catch(() => {}), giveUp]).then(() => {
+      setTimeout(() => {
+        loader.classList.add('is-ready');
+        setTimeout(finishLoad, reduceMotion ? 40 : 520);
+      }, Math.max(0, MIN - performance.now()));
+    });
   }
 
   function finishLoad() {
@@ -150,6 +130,8 @@
   function initScroll() {
     if (hasGSAP) {
       gsap.registerPlugin(ScrollTrigger);
+      // La barra de direcciones del móvil cambia la altura de la ventana al hacer scroll: no recalcular los pines por eso
+      ScrollTrigger.config({ ignoreMobileResize: true });
       if (window.Lenis && !reduceMotion) {
         lenis = new Lenis({
           duration: 1.25,
@@ -186,7 +168,7 @@
   /* ───────────── Navegación ───────────── */
   let setMenu = () => {};
   function initNav() {
-    const nav = $('#nav'), burger = $('#burger'), menu = $('#menu'), ring = $('#navRing');
+    const nav = $('#nav'), burger = $('#burger'), menu = $('#menu'), ring = $('#navRing'), closeBtn = $('#menuClose');
     if (!nav) return;
     menu.inert = true;
     setMenu = (open) => {
@@ -199,10 +181,20 @@
       if (open) nav.classList.remove('is-hidden');
       if (lenis) (open ? lenis.stop() : lenis.start());
       else document.body.style.overflow = open ? 'hidden' : '';
-      if (open) setTimeout(() => $('.menu-link', menu)?.focus(), 350);
+      if (open) setTimeout(() => (closeBtn || $('.menu-link', menu))?.focus(), 380);
     };
     burger.addEventListener('click', () => setMenu(!menuOpen));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) { setMenu(false); burger.focus(); } });
+    if (closeBtn) closeBtn.addEventListener('click', () => { setMenu(false); burger.focus({ preventScroll: true }); });
+    document.addEventListener('keydown', (e) => {
+      if (!menuOpen) return;
+      if (e.key === 'Escape') { setMenu(false); burger.focus({ preventScroll: true }); return; }
+      if (e.key !== 'Tab') return; // el foco se queda dentro del menú mientras está abierto
+      const f = $$('a[href], button', menu).filter((el) => el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
     window.matchMedia('(min-width: 1024px)').addEventListener('change', (m) => { if (m.matches && menuOpen) setMenu(false); });
 
     if (hasGSAP) {
@@ -321,7 +313,7 @@
     const media = $('.portal-media', sec), img = $('.portal-media img', sec);
     const words = $$('.pw', sec), copy = $$('.portal-copy > *', sec);
     const mm = gsap.matchMedia();
-    mm.add({ desk: '(min-width: 900px)', mob: '(max-width: 899px)' }, (ctx) => {
+    mm.add({ desk: '(min-width: 900px), (min-width: 640px) and (max-height: 560px)', mob: '(max-width: 899px) and (min-height: 561px), (max-width: 639px)' }, (ctx) => {
       // Empieza como el arco del logotipo (semicírculo perfecto arriba) y se abre hasta pantalla completa
       const desk = ctx.conditions.desk, W = window.innerWidth;
       const box = desk ? { top: '15%', bottom: '15%', left: '33%', right: '33%' } : { top: '20%', bottom: '26%', left: '12%', right: '12%' };
@@ -334,7 +326,7 @@
         scrollTrigger: { trigger: sec, start: 'top top', end: '+=180%', scrub: 0.7, pin: true, anticipatePin: 1 },
       })
         .to(media, { top: 0, bottom: 0, left: 0, right: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderWidth: 0, outlineOffset: 0, outlineWidth: 0, ease: 'power2.inOut', duration: 1.15 }, 0)
-        .to(img, { scale: 1, xPercent: desk ? 15 : 0, ease: 'power2.out', duration: 1.15 }, 0)
+        .to(img, { scale: desk ? 1 : 1.12, xPercent: desk ? 21 : 0, yPercent: desk ? 0 : -9, ease: 'power2.out', duration: 1.15 }, 0)
         .to(words[0], { xPercent: -135, autoAlpha: 0, duration: 0.75 }, 0.05)
         .to(words[1], { xPercent: 135, autoAlpha: 0, duration: 0.75 }, 0.05)
         .to(words[2], { xPercent: -135, autoAlpha: 0, duration: 0.75 }, 0.05)
@@ -715,11 +707,13 @@
     }
     return texSrc[k];
   }
+  let texInit = null; // sube la textura a la GPU en cuanto se crea (en vez de todo junto en el primer cuadro)
   function canvasTex(THREE, key, size, aniso, draw, o) {
     const t = new THREE.CanvasTexture(srcCanvas(key, size, draw));
     if (!o || o.srgb !== false) t.encoding = THREE.sRGBEncoding;
     t.anisotropy = aniso;
     if (o && o.repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(o.repeat[0], o.repeat[1]); }
+    if (texInit) texInit(t);
     return t;
   }
 
@@ -967,15 +961,15 @@
     return g;
   }
 
-  function buildWatch(THREE, env, aniso, mobile) {
+  async function buildWatch(THREE, env, aniso, mobile, rootG, step) {
     const seg = mobile ? 48 : 80;
     const texN = mobile ? 768 : 1024;
     const tz = -new Date().getTimezoneOffset() * 60000;
-    const rootG = new THREE.Group();
     const gears = [], subs = [];
     const parts = {};
     const std = (o) => { const m = new THREE.MeshStandardMaterial(o); m.envMap = env; return m; };
 
+    await step();
     const bumpCase = canvasTex(THREE, 'brushed', 512, aniso, drawBrushed, { srgb: false, repeat: [3, 1] });
     const bumpLinks = canvasTex(THREE, 'brushed', 512, aniso, drawBrushed, { srgb: false, repeat: [10, 10] });
 
@@ -988,11 +982,16 @@
     const mLume = new THREE.MeshStandardMaterial({ color: 0xeef0d6, emissive: 0xb6e8c2, emissiveIntensity: 0.6, roughness: 0.6 });
     const mGlass = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: 0.03, transparent: true, opacity: 0.09, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.8, depthWrite: false });
     mGlass.envMap = env;
-    const mDial = std({ map: canvasTex(THREE, 'dial', texN, aniso, drawDial), metalness: 0.5, roughness: 0.45, envMapIntensity: 0.7, emissive: 0xb6e8c2, emissiveMap: canvasTex(THREE, 'lume', texN, aniso, drawLume), emissiveIntensity: 0.6 });
+    await step();
+    const dialMap = canvasTex(THREE, 'dial', texN, aniso, drawDial);
+    await step();
+    const lumeMap = canvasTex(THREE, 'lume', texN, aniso, drawLume);
+    const mDial = std({ map: dialMap, metalness: 0.5, roughness: 0.45, envMapIntensity: 0.7, emissive: 0xb6e8c2, emissiveMap: lumeMap, emissiveIntensity: 0.6 });
 
     const group = (name, cfg) => { const g = new THREE.Group(); parts[name] = Object.assign({ obj: g, base: g.position.clone(), pulse: 0, target: 0 }, cfg); rootG.add(g); return g; };
     const cylZ = (r1, r2, h, s, mat) => { const geo = new THREE.CylinderGeometry(r1, r2, h, s || seg); geo.rotateX(Math.PI / 2); return new THREE.Mesh(geo, mat); };
 
+    await step();
     /* Caja (aro hueco para ver el movimiento al separar) + orejas */
     const gCase = group('case', { dz: 0, range: [0, 1], anchor: [0.9, -0.55, 0.1] });
     const prof = [[0.73, -0.18], [0.98, -0.18], [1.0, -0.14], [1.0, 0.12], [0.965, 0.18], [0.73, 0.18]].map(([x, y]) => new THREE.Vector2(x, y));
@@ -1005,6 +1004,7 @@
     const guard = new THREE.Mesh(bevelBox(THREE, 0.22, 0.5, 0.22, 0.03), mGoldSoft);
     guard.position.set(1.0, 0, 0); gCase.add(guard);
 
+    await step();
     /* Bisel con borde estriado + inserto graduado */
     const gBezel = group('bezel', { dz: 1.8, range: [0.04, 0.78], anchor: [-0.72, 0.72, 0.13] });
     {
@@ -1028,6 +1028,7 @@
     }
     gBezel.position.z = 0.17; parts.bezel.base.copy(gBezel.position);
 
+    await step();
     /* Cristal + destello */
     const gCrystal = group('crystal', { dz: 2.7, range: [0, 0.7], anchor: [-0.5, 0.52, 0.03] });
     gCrystal.add(cylZ(0.75, 0.75, 0.03, seg, mGlass));
@@ -1038,6 +1039,7 @@
     glint.position.z = 0.02; gCrystal.add(glint);
     gCrystal.position.z = 0.26; parts.crystal.base.copy(gCrystal.position);
 
+    await step();
     /* Esfera (+ manecillas de las subesferas) */
     const gDial = group('dial', { dz: 0.62, range: [0.16, 0.86], anchor: [-0.5, -0.42, 0.02] });
     gDial.add(new THREE.Mesh(new THREE.CircleGeometry(0.735, seg), mDial));
@@ -1050,6 +1052,7 @@
     });
     gDial.position.z = 0.07; parts.dial.base.copy(gDial.position);
 
+    await step();
     /* Manecillas (hora real) */
     const hand = (len, wid, tail, mat, z) => {
       const s = new THREE.Shape();
@@ -1071,6 +1074,7 @@
     const cap = cylZ(0.05, 0.05, 0.05, 24, mGold); cap.position.z = 0.205;
     gHands.add(hHour, hMin, hSec, cap);
 
+    await step();
     /* Movimiento: placa, engranes, rubíes y volante */
     const gMove = group('movement', { dz: -0.8, range: [0.22, 0.9], anchor: [0.3, -0.24, 0.07] });
     gMove.add(cylZ(0.7, 0.7, 0.05, seg, mDark));
@@ -1086,6 +1090,7 @@
     balance.position.set(-0.32, 0.38, 0.05); gMove.add(balance);
     gMove.position.z = -0.04; parts.movement.base.copy(gMove.position);
 
+    await step();
     /* Fondo de caja */
     const gBack = group('caseback', { dz: -1.7, range: [0.3, 1], anchor: [0.5, 0.55, 0.03] });
     gBack.add(cylZ(0.93, 0.93, 0.05, seg, std({ map: canvasTex(THREE, 'back', 512, aniso, drawBack), metalness: 1, roughness: 0.3, envMapIntensity: 1.2 })));
@@ -1096,6 +1101,7 @@
     }
     gBack.position.z = -0.21; parts.caseback.base.copy(gBack.position);
 
+    await step();
     /* Corona y pulsadores */
     const gCrown = group('crown', { dx: 1.15, range: [0, 0.6], anchor: [0.4, 0.05, 0] });
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.2, 12), mGoldSoft); stem.rotation.z = Math.PI / 2; stem.position.x = 0.1;
@@ -1109,6 +1115,7 @@
       g.add(st, hd); g.rotation.z = ang - Math.PI / 2; g.position.set(Math.cos(ang) * 0.98, Math.sin(ang) * 0.98, 0); parts['pusher' + i].base.copy(g.position);
     });
 
+    await step();
     /* Brazalete */
     const arm = (dir, name) => {
       const g = group(name, { dy: dir * 1.2, range: [0.1, 0.82], anchor: [0, dir * 2.05, 0] });
@@ -1173,15 +1180,17 @@
   class WatchStage {
     constructor(canvas, opts) {
       const THREE = window.THREE;
-      this.canvas = canvas; this.opts = opts; this.size = { w: 0, h: 0 }; this.active = false; this.ok = false;
+      this.canvas = canvas; this.opts = opts; this.size = { w: 0, h: 0 }; this.active = false; this.ok = false; this.failed = false;
+      const dpr = window.devicePixelRatio || 1;
       try {
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !opts.mobile, alpha: true, stencil: false, powerPreference: 'high-performance' });
-      } catch (err) { return; }
+        // Pantallas de alta densidad ya no necesitan suavizado de bordes por hardware (MSAA): es lo más caro del cuadro
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !opts.mobile && dpr < 1.5, alpha: true, stencil: false, powerPreference: 'high-performance' });
+      } catch (err) { this.failed = true; return; }
       const r = this.renderer;
       // Resolución dinámica: tope por dispositivo y piso 0.75
-      this.prMax = Math.min(window.devicePixelRatio || 1, 2);
+      this.prMax = Math.min(dpr, opts.maxPR || 2);
       this.prMin = Math.min(0.75, this.prMax);
-      this.pr = Math.min(this.prMax, opts.mobile ? 1.75 : 2);
+      this.pr = this.prMax;
       this.ema = 0; this.perfN = 0; this.perfUp = 0; this.perfCool = 0;
       r.setPixelRatio(this.pr);
       r.outputEncoding = THREE.sRGBEncoding;
@@ -1193,8 +1202,6 @@
       this.scene = new THREE.Scene();
       this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
       this.camera.position.set(0, 0, 10.5);
-      const env = buildEnv(THREE, r);
-      this.scene.environment = env;
       this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
       const key = new THREE.DirectionalLight(0xfff0d0, 2.0); key.position.set(-4, 5, 7); this.scene.add(key);
       const rim = new THREE.DirectionalLight(0x6fb6ff, 1.3); rim.position.set(6, 2, -4); this.scene.add(rim);
@@ -1202,8 +1209,8 @@
       this.key = key;
 
       this.rig = new THREE.Group();
-      this.watch = buildWatch(THREE, env, Math.min(r.capabilities.getMaxAnisotropy(), 8), opts.mobile);
-      this.rig.add(this.watch.root);
+      this.rigRoot = new THREE.Group(); // el reloj se arma aquí, pieza por pieza, en init()
+      this.rig.add(this.rigRoot);
       // Halo dorado detrás del reloj (sprite aditivo, escala con el reloj)
       this.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(THREE, 'glow', 128, 1, drawGlow), color: 0xe0bb4d, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
       this.glow.scale.set(7, 7, 1); this.glow.position.z = -1.8; this.rig.add(this.glow);
@@ -1215,6 +1222,17 @@
       this.io = new IntersectionObserver(([e]) => { this.active = e.isIntersecting; }, { rootMargin: '10% 0px' });
       this.io.observe(canvas);
       this.resize();
+    }
+    // Armado en pasos pequeños (entorno, texturas, geometrías) cediendo el hilo entre cada uno
+    async init() {
+      const THREE = window.THREE, r = this.renderer;
+      texInit = (t) => { try { r.initTexture(t); } catch (err) { /* opcional */ } };
+      const step = async () => { this.compile(); await yieldFrame(); };
+      await yieldFrame();
+      const env = buildEnv(THREE, r);
+      this.scene.environment = env;
+      await yieldFrame();
+      this.watch = await buildWatch(THREE, env, Math.min(r.capabilities.getMaxAnisotropy(), 8), this.opts.mobile, this.rigRoot, step);
       this.ok = true;
     }
     resize() {
@@ -1242,7 +1260,7 @@
       if (++this.perfN < 24) return;
       if (this.ema > 1 / 36 && this.pr > this.prMin + 0.01) {
         this.setPR(Math.max(this.prMin, this.pr - 0.25)); this.perfN = 0; this.perfUp = 0; this.perfCool = 480;
-      } else if (this.ema < 1 / 57 && this.pr < Math.min(this.prMax, this.opts.mobile ? 1.75 : 2) - 0.01) {
+      } else if (this.ema < 1 / 57 && this.pr < this.prMax - 0.01) {
         if (++this.perfUp > 300) { this.setPR(Math.min(this.prMax, this.pr + 0.25)); this.perfUp = 0; this.perfCool = 480; }
       } else this.perfUp = 0;
     }
@@ -1260,50 +1278,142 @@
     }
   }
 
-  /* Hero: el reloj se arma al terminar el preloader y flota sin parar */
-  function initHero3D() {
-    const canvas = $('#heroCanvas');
-    if (!canvas || !hasThree) { root.classList.add('no-webgl'); resolveHero(); return; }
-    const mobile = isMobile();
-    const stage = new WatchStage(canvas, { mobile, particles: mobile ? 110 : 260 });
-    if (!stage.ok) { root.classList.add('no-webgl'); resolveHero(); return; }
+  /* ───────────── Geometría del hero ─────────────
+     Lee dónde quedó el "escenario" (.hero-stage) y coloca ahí el arco, los anillos y la imagen de respaldo
+     mediante variables CSS. Es independiente del 3D: funciona igual si WebGL o las librerías no cargan. */
+  function heroGeometry() {
+    const hero = $('#inicio'), zone = $('#heroStage');
+    if (!hero || !zone) return null;
+    const hr = hero.getBoundingClientRect(), zr = zone.getBoundingClientRect();
+    const zh = zr.height, zw = zr.width;
+    if (!zh || !zw) return null;
+    const face = Math.min(zh * 0.82, zw * 0.74, 640);
+    const cx = zr.left - hr.left + zw / 2, cy = zr.top - hr.top + zh * 0.52;
+    const st = hero.style;
+    st.setProperty('--zx', cx.toFixed(1) + 'px');
+    st.setProperty('--zy', cy.toFixed(1) + 'px');
+    st.setProperty('--rw', Math.round(Math.min(hr.width * 1.3, zh * 2.5)) + 'px');
+    st.setProperty('--tw', Math.round(face * 1.42) + 'px');
+    st.setProperty('--fw', Math.round(face * 0.62) + 'px');
+    st.setProperty('--ah', Math.round(hr.bottom - zr.top + zh * 0.02) + 'px');
+    return { hr, zr, zh, zw, face, cx, cy, top: zr.top - hr.top };
+  }
+  function initHeroLayout() {
+    heroGeometry();
+    const zone = $('#heroStage');
+    if (zone && 'ResizeObserver' in window) new ResizeObserver(() => heroGeometry()).observe(zone);
+    window.addEventListener('resize', heroGeometry, { passive: true });
+  }
 
-    const S = { ex: reduceMotion ? 0 : 1, spin: reduceMotion ? 0 : -1.3, mx: 0, my: 0, cx: 0, cy: 0, scroll: 0 };
-    let baseY = 0, scale = 1;
-    stage.onResize = (w, h) => {
-      const desk = w >= 1024, u = stage.unitsPerPx();
-      const facePx = desk ? Math.min(w * 0.36, h * 0.56) : Math.min(w * 0.64, h * 0.36);
-      scale = (facePx * u) / 2;
-      stage.rig.scale.setScalar(scale);
-      stage.rig.position.x = (desk ? 0.23 * w : 0) * u;
-      baseY = -(desk ? 0 : 0.215 * h) * u;
+  /* ───────────────────────────────────────────────────────────────────
+     Hero: reloj centrado en el escenario bajo el texto. Al hacer scroll el hero se ANCLA y el reloj:
+     sube al centro de la pantalla, da una vuelta completa (muestra el lateral y el fondo), se acerca
+     a la esfera y empieza a separarse; el texto se desvanece y la luz dorada crece.
+     ─────────────────────────────────────────────────────────────────── */
+  async function initHero3D() {
+    const canvas = $('#heroCanvas'), hero = $('#inicio'), zone = $('#heroStage');
+    if (!canvas || !hero || !zone || !hasThree) { root.classList.add('no-webgl'); resolveHero(); return; }
+    const mobile = isMobile();
+    const stage = new WatchStage(canvas, { mobile, particles: mobile ? 90 : 220, maxPR: 1.5 });
+    if (stage.failed) { root.classList.add('no-webgl'); resolveHero(); return; }
+
+    const S = { ex: reduceMotion ? 0 : 1, spin: reduceMotion ? 0 : -1.3, mx: 0, my: 0, cx: 0, cy: 0, turn: 0, rise: 0, zoom: 0, lift: 0, aura: 0, mk: 0 };
+    let baseX = 0, baseY = 0, midY = 0, scale = 1, zoomK = 0.4, maskA = 0, maskB = 0, lastMk = -1;
+
+    // Coloca el reloj 3D (y su máscara) según la posición real del escenario (.hero-stage)
+    const layout = () => {
+      if (!stage.size.h) return;
+      const g = heroGeometry();
+      if (!g) return;
+      const u = stage.unitsPerPx();
+      scale = (g.face * u) / 2;
+      baseX = (g.cx - g.hr.width / 2) * u;
+      baseY = -(g.cy - g.hr.height / 2) * u;
+      const viewH = Math.min(g.hr.height, window.innerHeight);
+      midY = -(viewH / 2 - g.hr.height / 2) * u;
+      // el acercamiento final nunca debe pasar del ancho ni del alto de la pantalla
+      zoomK = clamp(Math.min((viewH * 0.66) / g.face, (g.hr.width * 0.8) / g.face) - 1, 0.1, 0.4);
+      maskA = Math.round(g.top - 14); maskB = Math.round(g.top + g.zh * 0.2);
+      lastMk = -1; // fuerza reaplicar la máscara
     };
-    stage.resize();
+    stage.onResize = layout;
+    new ResizeObserver(layout).observe(zone);
+
     stage.onFrame = (t) => {
       S.cx += (S.mx - S.cx) * 0.06; S.cy += (S.my - S.cy) * 0.06;
-      const rig = stage.rig, still = reduceMotion;
-      rig.rotation.y = S.spin + (still ? 0 : Math.sin(t * 0.6) * 0.34) + S.cx * 0.38 + S.scroll * 1.5;
-      rig.rotation.x = 0.14 + (still ? 0 : Math.sin(t * 0.45) * 0.05) - S.cy * 0.2 + S.scroll * 0.3;
-      rig.rotation.z = -0.2;
-      rig.position.y = baseY + (still ? 0 : Math.sin(t * 0.9) * 0.07 * scale) + S.scroll * 1.2 * scale;
-      stage.watch.setExplode(S.ex);
-      stage.glow.material.opacity = (0.15 + 0.2 * S.ex + (still ? 0 : 0.04 * Math.sin(t * 0.8))) * (1 - S.scroll * 0.8);
+      const rig = stage.rig, still = reduceMotion, k = 1 - S.turn;
+      rig.rotation.y = S.spin + (still ? 0 : Math.sin(t * 0.6) * 0.34 * k) + S.cx * 0.38 * (1 - S.turn * 0.8) + S.turn * Math.PI * 2;
+      rig.rotation.x = 0.14 + (still ? 0 : Math.sin(t * 0.45) * 0.05 * k) - S.cy * 0.2 * k + S.turn * 0.1;
+      rig.rotation.z = -0.2 * (1 - S.turn * 0.7);
+      rig.position.x = baseX * (1 - S.rise);
+      rig.position.y = lerp(baseY, midY, S.rise) + (still ? 0 : Math.sin(t * 0.9) * 0.07 * scale * k);
+      rig.scale.setScalar(scale * (1 + zoomK * S.zoom));
+      stage.watch.setExplode(Math.max(S.ex, S.lift));
+      stage.glow.material.opacity = 0.15 + 0.2 * S.ex + 0.5 * S.aura + (still ? 0 : 0.04 * Math.sin(t * 0.8));
+      // La máscara oculta el brazalete superior mientras hay texto encima y se abre cuando el reloj sube al centro
+      if (Math.abs(S.mk - lastMk) > 0.002 || lastMk < 0) {
+        lastMk = S.mk;
+        canvas.style.setProperty('--mk-a', (maskA * (1 - S.mk)).toFixed(1) + 'px');
+        canvas.style.setProperty('--mk-b', (maskB * (1 - S.mk)).toFixed(1) + 'px');
+      }
     };
     if (finePointer) {
       window.addEventListener('pointermove', (e) => { S.mx = (e.clientX / window.innerWidth - 0.5) * 2; S.my = (e.clientY / window.innerHeight - 0.5) * 2; }, { passive: true });
     }
+
+    await stage.init();
+    stage.resize();
+    layout();
     addTicker((t, dt) => stage.render(t, dt));
-    if (hasGSAP) {
-      ScrollTrigger.create({ trigger: '#inicio', start: 'top top', end: 'bottom top', scrub: true, onUpdate: (s) => { S.scroll = s.progress; } });
+
+    if (hasGSAP && !reduceMotion) {
+      // El hero se ancla solo si cabe en la pantalla. En teléfonos muy bajos (o apaisados) el hero es más alto que la
+      // ventana: anclarlo dejaría partes sin poder verse, así que ahí el mismo efecto corre sin anclar.
+      let tl = null, pinned = null;
+      const build = () => {
+        const wantPin = hero.offsetHeight <= window.innerHeight + 8;
+        if (wantPin === pinned) return;
+        pinned = wantPin;
+        if (tl) { tl.scrollTrigger.kill(true); tl.kill(); }
+        Object.assign(S, { turn: 0, rise: 0, zoom: 0, lift: 0, aura: 0, mk: 0 });
+        const dist = () => Math.round(window.innerHeight * (isMobile() ? 1.0 : 1.25));
+        tl = gsap.timeline({
+          defaults: { ease: 'none' },
+          scrollTrigger: wantPin
+            ? { trigger: hero, start: 'top top', end: () => '+=' + dist(), scrub: 0.6, pin: true, anticipatePin: 1, invalidateOnRefresh: true }
+            : { trigger: hero, start: 'top top', end: 'bottom top', scrub: 0.6, invalidateOnRefresh: true },
+        });
+        tl.to('.hero-inner', { y: wantPin ? -90 : -40, autoAlpha: 0, ease: 'power2.in', duration: 0.26 }, 0)
+          .to(S, { turn: 1, ease: 'power2.inOut', duration: 0.78 }, 0.04)
+          .to(S, { zoom: 1, ease: 'power2.inOut', duration: 0.6 }, 0.16)
+          .to(S, { aura: 1, ease: 'power1.inOut', duration: 0.7 }, 0.1)
+          .to(S, { lift: isMobile() ? 0.42 : 0.56, ease: 'power2.inOut', duration: 0.38 }, 0.62)
+          .to('.hero-arch', { scale: 1.3, autoAlpha: 0, transformOrigin: '50% 100%', duration: 0.7 }, 0.1)
+          .to('.hero-rings, .hero-ringtext', { autoAlpha: 0, duration: 0.5 }, 0.15)
+          .to(S, { mk: 1, ease: 'none', duration: 0.3 }, 0.12);
+        if (wantPin) tl.to(S, { rise: 1, ease: 'power2.inOut', duration: 0.55 }, 0.04);
+      };
+      build();
+      ScrollTrigger.sort();
+      requestAnimationFrame(() => ScrollTrigger.refresh());
+      let rt, lastW = window.innerWidth, lastH = window.innerHeight;
+      window.addEventListener('resize', () => {
+        clearTimeout(rt);
+        rt = setTimeout(() => {
+          // la barra de direcciones del móvil cambia la altura unos píxeles: eso no cuenta
+          if (window.innerWidth === lastW && Math.abs(window.innerHeight - lastH) < 120) return;
+          lastW = window.innerWidth; lastH = window.innerHeight;
+          build(); ScrollTrigger.sort(); ScrollTrigger.refresh();
+        }, 280);
+      }, { passive: true });
       document.addEventListener('loader:done', () => {
-        if (reduceMotion) return;
         gsap.to(S, { ex: 0, duration: 2.8, ease: 'expo.out', delay: 0.15 });
         gsap.to(S, { spin: 0, duration: 3.4, ease: 'power4.out', delay: 0.15 });
       }, { once: true });
     }
     stage.compile();
-    stage.active = true;
-    stage.render(0, 0);
+    await yieldFrame();
+    stage.warm();
     requestAnimationFrame(() => resolveHero());
   }
 
@@ -1343,7 +1453,7 @@
     const marks = [0, 0.13, 0.25, 0.37, 0.5, 0.63];
     const S = { target: reduceMotion ? 0.56 : 0, p: reduceMotion ? 0.56 : 0, mx: 0, my: 0, step: -1, final: false };
     const cam = Object.assign({}, GROUPS[0].cam, { ry: -0.2, rx: 0.1, rz: -0.12, z: 10.5 });
-    let stage = null, pinSide = '', pinOn = false;
+    let stage = null, building = false, pinSide = '', pinOn = false;
 
     const setStep = (i, final) => {
       if (i !== S.step) {
@@ -1365,20 +1475,22 @@
     setStep(0, false);
     if (reduceMotion) { steps.forEach((li) => li.classList.add('is-active')); cta.classList.add('is-on'); }
 
-    const build = () => {
-      if (stage || !hasThree) return;
+    const build = async () => {
+      if (stage || building || !hasThree) return;
+      building = true;
       const mobile = isMobile();
-      stage = new WatchStage(canvas, { mobile, particles: mobile ? 0 : 90 });
-      if (!stage.ok) { root.classList.add('no-webgl'); stage = null; return; }
+      const st = new WatchStage(canvas, { mobile, particles: mobile ? 0 : 90, maxPR: 1.75 });
+      if (st.failed) { root.classList.add('no-webgl'); stage = null; building = true; return; }
+      stage = st;
       const THREE = window.THREE, v = new THREE.Vector3();
       let scale = 1;
       stage.onResize = (w, h) => {
-        const desk = w >= 1024, u = stage.unitsPerPx();
-        const facePx = desk ? Math.min(w * 0.3, h * 0.44) : Math.min(w * 0.54, h * 0.28);
+        const desk = w >= 1024, land = !desk && w >= 640 && h <= 560, u = stage.unitsPerPx();
+        const facePx = desk ? Math.min(w * 0.3, h * 0.44) : land ? Math.min(w * 0.26, h * 0.5) : Math.min(w * 0.54, h * 0.28);
         scale = (facePx * u) / 2;
         stage.rig.scale.setScalar(scale);
-        stage.rig.position.x = (desk ? 0.2 * w : 0) * u;
-        stage.rig.position.y = -(desk ? 0.01 * h : -0.02 * h) * u;
+        stage.rig.position.x = (desk ? 0.2 : land ? 0.22 : 0) * w * u;
+        stage.rig.position.y = -(desk ? 0.01 * h : land ? 0 : -0.02 * h) * u;
       };
       stage.resize();
 
@@ -1394,7 +1506,8 @@
         const w = stage.size.w, h = stage.size.h;
         const x = (v.x * 0.5 + 0.5) * w;
         // la llamada siempre queda dentro de la pantalla visible (no bajo el titular ni bajo el panel inferior)
-        const y = clamp((-v.y * 0.5 + 0.5) * h, mobile ? h * 0.3 : 84, mobile ? h * 0.6 : h - 84);
+        const short = h <= 560;
+        const y = clamp((-v.y * 0.5 + 0.5) * h, short ? 64 : mobile ? h * 0.3 : 84, short ? h - 64 : mobile ? h * 0.6 : h - 84);
         v.set(0, 0, 0); stage.rig.localToWorld(v); v.project(stage.camera);
         const cx = (v.x * 0.5 + 0.5) * w;
         let side = x >= cx ? 'r' : 'l';
@@ -1423,15 +1536,16 @@
         if (stage.particles) stage.particles.userData.base = 0.45 + 0.35 * ex;
         updatePin(ex, true);
       };
+      await stage.init();   // armado por pasos: no bloquea el scroll ni las animaciones
+      stage.resize();
       addTicker((t, dt) => stage.render(t, dt));
-      // Calentamiento en pasos ociosos separados: compilar shaders, luego subir texturas con un primer cuadro
-      const idle = (fn) => (('requestIdleCallback' in window) ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 200));
-      idle(() => { if (stage) { stage.compile(); idle(() => { if (stage) stage.warm(); }); } });
+      await yieldFrame();
+      stage.warm();         // primer cuadro por adelantado (sube lo que falte a la GPU) antes de que el usuario llegue
     };
 
     // Se arma en un momento ocioso poco después de terminar la intro (sin tirones al llegar a la sección)
     document.addEventListener('loader:done', () => {
-      setTimeout(() => { if ('requestIdleCallback' in window) requestIdleCallback(build, { timeout: 2500 }); else build(); }, 3200);
+      setTimeout(() => { if ('requestIdleCallback' in window) requestIdleCallback(() => build(), { timeout: 2500 }); else build(); }, 3200);
     }, { once: true });
     const lazy = new IntersectionObserver(([e]) => { if (e.isIntersecting) { build(); lazy.disconnect(); } }, { rootMargin: '150% 0px' });
     lazy.observe(sec);
@@ -1479,6 +1593,7 @@
     safe('nav', initNav);
     safe('reveals', initReveals);
     safe('counters', initCounters);
+    safe('hero-layout', initHeroLayout);
     safe('hero-intro', initHeroIntro);
     safe('ticker', initTicker);
     safe('manifest', initManifest);
@@ -1496,7 +1611,7 @@
     safe('chrome', initChrome);
 
     // El reloj del hero se construye cuando ya están las tipografías (las usa en la esfera)
-    fonts.then(() => setTimeout(() => safe('hero3d', initHero3D) , 60));
+    fonts.then(() => setTimeout(() => safe('hero3d', () => initHero3D().catch((err) => { console.error('[DW Wach] hero3d', err); root.classList.add('no-webgl'); resolveHero(); })) , 60));
     setTimeout(resolveHero, 8000); // seguro anti-bloqueo del preloader
 
     if (hasGSAP) {

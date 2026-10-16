@@ -29,8 +29,18 @@
 <link rel="preload" as="font" type="font/woff2" href="fonts/bodoni-moda-italic.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="fonts/geist.woff2" crossorigin>
 <link rel="preload" as="image" href="img/owl.png">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="stylesheet" href="styles.css">
-<script>document.documentElement.className = 'js';</script>
+<!-- Librerías con versión fija. En el head con defer: se descargan en paralelo desde el primer segundo y se ejecutan en orden -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+<script src="app.js" defer></script>
+<script>document.documentElement.className = 'js';
+// Seguro: si por cualquier motivo el JS no termina, la página nunca se queda bloqueada
+setTimeout(function () { if (document.body) document.body.classList.remove('is-loading'); }, 16000);</script>
 <noscript><style>#loader{display:none!important}body.is-loading{overflow:auto!important}</style></noscript>
 
 <script type="application/ld+json">
@@ -131,21 +141,24 @@
 
 <a class="skip" href="#contenido">Saltar al contenido</a>
 
-<!-- ═════════ PRELOADER ═════════ -->
+<!-- ═════════ PRELOADER (animación solo CSS: arranca en el primer cuadro y no depende del JS) ═════════ -->
 <div id="loader" role="status" aria-live="polite" aria-label="Cargando DW Wach">
   <div class="ld-panel ld-panel--top"></div>
   <div class="ld-panel ld-panel--bottom"></div>
   <div class="ld-stage">
     <div class="ld-dial">
-      <svg class="ld-ticks" viewBox="0 0 200 200" aria-hidden="true"></svg>
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><g id="ldTicks" stroke-linecap="round"><line x1="100.00" y1="17.00" x2="100.00" y2="2.00" stroke-width="2.2"/><line x1="109.41" y1="10.49" x2="110.24" y2="2.54" stroke-width="1"/><line x1="118.71" y1="11.97" x2="120.38" y2="4.14" stroke-width="1"/><line x1="127.81" y1="14.40" x2="130.28" y2="6.80" stroke-width="1"/><line x1="136.61" y1="17.78" x2="139.86" y2="10.47" stroke-width="1"/><line x1="141.50" y1="28.12" x2="149.00" y2="15.13" stroke-width="2.2"/><line x1="152.90" y1="27.19" x2="157.60" y2="20.72" stroke-width="1"/><line x1="160.22" y1="33.12" x2="165.57" y2="27.17" stroke-width="1"/><line x1="166.88" y1="39.78" x2="172.83" y2="34.43" stroke-width="1"/><line x1="172.81" y1="47.10" x2="179.28" y2="42.40" stroke-width="1"/><line x1="171.88" y1="58.50" x2="184.87" y2="51.00" stroke-width="2.2"/><line x1="182.22" y1="63.39" x2="189.53" y2="60.14" stroke-width="1"/><line x1="185.60" y1="72.19" x2="193.20" y2="69.72" stroke-width="1"/><line x1="188.03" y1="81.29" x2="195.86" y2="79.62" stroke-width="1"/><line x1="189.51" y1="90.59" x2="197.46" y2="89.76" stroke-width="1"/><line x1="183.00" y1="100.00" x2="198.00" y2="100.00" stroke-width="2.2"/><line x1="189.51" y1="109.41" x2="197.46" y2="110.24" stroke-width="1"/><line x1="188.03" y1="118.71" x2="195.86" y2="120.38" stroke-width="1"/><line x1="185.60" y1="127.81" x2="193.20" y2="130.28" stroke-width="1"/><line x1="182.22" y1="136.61" x2="189.53" y2="139.86" stroke-width="1"/><line x1="171.88" y1="141.50" x2="184.87" y2="149.00" stroke-width="2.2"/><line x1="172.81" y1="152.90" x2="179.28" y2="157.60" stroke-width="1"/><line x1="166.88" y1="160.22" x2="172.83" y2="165.57" stroke-width="1"/><line x1="160.22" y1="166.88" x2="165.57" y2="172.83" stroke-width="1"/><line x1="152.90" y1="172.81" x2="157.60" y2="179.28" stroke-width="1"/><line x1="141.50" y1="171.88" x2="149.00" y2="184.87" stroke-width="2.2"/><line x1="136.61" y1="182.22" x2="139.86" y2="189.53" stroke-width="1"/><line x1="127.81" y1="185.60" x2="130.28" y2="193.20" stroke-width="1"/><line x1="118.71" y1="188.03" x2="120.38" y2="195.86" stroke-width="1"/><line x1="109.41" y1="189.51" x2="110.24" y2="197.46" stroke-width="1"/><line x1="100.00" y1="183.00" x2="100.00" y2="198.00" stroke-width="2.2"/><line x1="90.59" y1="189.51" x2="89.76" y2="197.46" stroke-width="1"/><line x1="81.29" y1="188.03" x2="79.62" y2="195.86" stroke-width="1"/><line x1="72.19" y1="185.60" x2="69.72" y2="193.20" stroke-width="1"/><line x1="63.39" y1="182.22" x2="60.14" y2="189.53" stroke-width="1"/><line x1="58.50" y1="171.88" x2="51.00" y2="184.87" stroke-width="2.2"/><line x1="47.10" y1="172.81" x2="42.40" y2="179.28" stroke-width="1"/><line x1="39.78" y1="166.88" x2="34.43" y2="172.83" stroke-width="1"/><line x1="33.12" y1="160.22" x2="27.17" y2="165.57" stroke-width="1"/><line x1="27.19" y1="152.90" x2="20.72" y2="157.60" stroke-width="1"/><line x1="28.12" y1="141.50" x2="15.13" y2="149.00" stroke-width="2.2"/><line x1="17.78" y1="136.61" x2="10.47" y2="139.86" stroke-width="1"/><line x1="14.40" y1="127.81" x2="6.80" y2="130.28" stroke-width="1"/><line x1="11.97" y1="118.71" x2="4.14" y2="120.38" stroke-width="1"/><line x1="10.49" y1="109.41" x2="2.54" y2="110.24" stroke-width="1"/><line x1="17.00" y1="100.00" x2="2.00" y2="100.00" stroke-width="2.2"/><line x1="10.49" y1="90.59" x2="2.54" y2="89.76" stroke-width="1"/><line x1="11.97" y1="81.29" x2="4.14" y2="79.62" stroke-width="1"/><line x1="14.40" y1="72.19" x2="6.80" y2="69.72" stroke-width="1"/><line x1="17.78" y1="63.39" x2="10.47" y2="60.14" stroke-width="1"/><line x1="28.12" y1="58.50" x2="15.13" y2="51.00" stroke-width="2.2"/><line x1="27.19" y1="47.10" x2="20.72" y2="42.40" stroke-width="1"/><line x1="33.12" y1="39.78" x2="27.17" y2="34.43" stroke-width="1"/><line x1="39.78" y1="33.12" x2="34.43" y2="27.17" stroke-width="1"/><line x1="47.10" y1="27.19" x2="42.40" y2="20.72" stroke-width="1"/><line x1="58.50" y1="28.12" x2="51.00" y2="15.13" stroke-width="2.2"/><line x1="63.39" y1="17.78" x2="60.14" y2="10.47" stroke-width="1"/><line x1="72.19" y1="14.40" x2="69.72" y2="6.80" stroke-width="1"/><line x1="81.29" y1="11.97" x2="79.62" y2="4.14" stroke-width="1"/><line x1="90.59" y1="10.49" x2="89.76" y2="2.54" stroke-width="1"/></g></defs></svg>
+      <svg class="ld-ring ld-ring--dim" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#ldTicks"/></svg>
+      <div class="ld-half ld-half--r"><div class="ld-rot ld-rot--r"><svg class="ld-ring ld-ring--lit ld-cl" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#ldTicks"/></svg></div></div>
+      <div class="ld-half ld-half--l"><div class="ld-rot ld-rot--l"><svg class="ld-ring ld-ring--lit ld-cr" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><use href="#ldTicks"/></svg></div></div>
       <div class="ld-sweep" aria-hidden="true"></div>
       <div class="ld-owl">
         <img class="ld-owl-dim" src="img/owl.png" alt="" width="304" height="423">
-        <img class="ld-owl-lit" src="img/owl.png" alt="" width="304" height="423">
+        <div class="ld-fill"><img src="img/owl.png" alt="" width="304" height="423"></div>
       </div>
     </div>
     <p class="ld-brand">DW WACH</p>
-    <p class="ld-count" aria-hidden="true"><span id="ldNum">000</span><i>%</i></p>
+    <p class="ld-count" aria-hidden="true"><span id="ldNum"></span><i>%</i></p>
   </div>
 </div>
 
@@ -175,6 +188,15 @@
 </header>
 
 <div class="menu" id="menu" role="dialog" aria-modal="true" aria-label="Menú de navegación" aria-hidden="true">
+  <div class="menu-top">
+    <a class="brand" href="#inicio" aria-label="DW Wach, inicio">
+      <img src="img/owl.png" alt="" width="304" height="423" class="brand-owl">
+      <span class="brand-name">DW <b>WACH</b></span>
+    </a>
+    <button class="menu-close" id="menuClose" type="button" aria-label="Cerrar menú">
+      <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+    </button>
+  </div>
   <nav class="menu-nav" aria-label="Menú móvil">
     <a class="menu-link" href="#colecciones"><span>Colecciones</span><svg class="ic" aria-hidden="true"><use href="#i-arrow-up-right"/></svg></a>
     <a class="menu-link" href="#planes"><span>Planes</span><svg class="ic" aria-hidden="true"><use href="#i-arrow-up-right"/></svg></a>
@@ -195,14 +217,14 @@
 <!-- ═════════ HERO ═════════ -->
 <section class="hero" id="inicio" aria-labelledby="heroTitle">
   <div class="hero-bg" aria-hidden="true"></div>
-  <svg class="hero-arch" viewBox="0 0 400 620" aria-hidden="true" focusable="false">
+  <svg class="hero-arch" viewBox="0 0 400 440" aria-hidden="true" focusable="false">
     <defs>
       <linearGradient id="archG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f1d67a" stop-opacity=".95"/><stop offset=".55" stop-color="#c99d2e" stop-opacity=".55"/><stop offset="1" stop-color="#c99d2e" stop-opacity=".05"/></linearGradient>
       <radialGradient id="archFill" cx=".5" cy=".42" r=".6"><stop offset="0" stop-color="#e0bb4d" stop-opacity=".16"/><stop offset="1" stop-color="#e0bb4d" stop-opacity="0"/></radialGradient>
     </defs>
-    <path class="a0" d="M12 620V212A188 188 0 0 1 388 212V620Z"/>
-    <path class="a1" d="M12 620V212A188 188 0 0 1 388 212V620"/>
-    <path class="a2" d="M36 620V214A164 164 0 0 1 364 214V620"/>
+    <path class="a0" d="M12 440V200A188 188 0 0 1 388 200V440Z"/>
+    <path class="a1" d="M12 440V200A188 188 0 0 1 388 200V440"/>
+    <path class="a2" d="M36 440V202A164 164 0 0 1 364 202V440"/>
   </svg>
   <div class="hero-rings" aria-hidden="true"><i></i><i></i><i></i></div>
   <svg class="hero-ringtext" viewBox="0 0 600 600" aria-hidden="true">
@@ -210,7 +232,7 @@
     <text><textPath href="#ringPath" startOffset="0">ORIGINALES / NUEVOS / CON GARANTÍA / ABONOS QUINCENALES / ENVÍO A DOMICILIO / 6 MSI / ORIGINALES / NUEVOS / CON GARANTÍA / ABONOS QUINCENALES / ENVÍO A DOMICILIO / 6 MSI /</textPath></text>
   </svg>
   <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
-  <img class="hero-fallback" src="img/relojes/bolt-oro.webp" alt="Reloj Invicta Bolt dorado" width="598" height="850" fetchpriority="high">
+  <img class="hero-fallback" src="img/relojes/bolt-oro.webp" alt="Reloj Invicta Bolt dorado" width="598" height="850" loading="lazy" decoding="async">
 
   <div class="hero-inner">
     <p class="hero-eyebrow" data-hero-in>Relojería y perfumería</p>
@@ -223,6 +245,7 @@
       <a class="btn btn-ghost" href="#colecciones" data-magnetic><span>Ver colecciones</span></a>
     </div>
   </div>
+  <div class="hero-stage" id="heroStage" aria-hidden="true"></div>
 </section>
 
 <!-- ═════════ TICKER (único marquee de la página) ═════════ -->
@@ -909,11 +932,5 @@
   <svg class="ic" aria-hidden="true"><use href="#i-whatsapp-logo"/></svg>
 </a>
 
-<!-- Librerías (versiones fijas) -->
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
-<script src="app.js" defer></script>
 </body>
 </html>
